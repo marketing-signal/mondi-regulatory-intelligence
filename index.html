@@ -25,7 +25,7 @@
         *, *::before, *::after { box-sizing: border-box; }
 
         body {
-        
+
             font-family: 'Poppins', sans-serif;
             background-color: var(--page-bg);
             color: var(--dark);
@@ -36,6 +36,87 @@
         #mondi-regulatory-app {
             max-width: 1200px;
             margin: 0 auto;
+        }
+
+        /* ── Access Gate ── */
+        #accessGate {
+            position: fixed;
+            inset: 0;
+            background: var(--page-bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            padding: 24px;
+        }
+
+        .auth-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-top: 5px solid var(--accent);
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+            padding: 40px 38px;
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .auth-card h2 {
+            font-size: 20px;
+            font-weight: 700;
+            margin: 0 0 8px;
+            color: var(--dark);
+        }
+
+        .auth-card p {
+            font-size: 13.5px;
+            color: var(--muted);
+            margin: 0 0 22px;
+            line-height: 1.5;
+        }
+
+        .auth-input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 14px;
+            background: var(--page-bg);
+            color: var(--dark);
+            margin-bottom: 14px;
+        }
+
+        .auth-input:focus {
+            outline: none;
+            border-color: var(--purple);
+            background: var(--card-bg);
+            box-shadow: 0 0 0 3px rgba(100,70,255,0.12);
+        }
+
+        .auth-btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background: var(--accent);
+            color: #fff;
+            font-family: 'Poppins', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.2s;
+        }
+
+        .auth-btn:hover { background: #e04448; transform: translateY(-1px); }
+
+        .auth-error {
+            color: var(--accent);
+            font-size: 13px;
+            font-weight: 500;
+            margin-top: 12px;
+            min-height: 18px;
         }
 
         /* ── Top Bar ── */
@@ -646,7 +727,18 @@
 </head>
 <body>
 
-<div id="mondi-regulatory-app">
+<!-- ===== ACCESS GATE ===== -->
+<div id="accessGate">
+    <form class="auth-card" id="authForm">
+        <h2>Mondi Regulatory Tracker</h2>
+        <p>This page is protected. Please enter your access code to continue.</p>
+        <input type="password" id="passwordInput" class="auth-input" placeholder="Access code" autocomplete="off" required>
+        <button type="submit" class="auth-btn">Access Tracker</button>
+        <div class="auth-error" id="authError"></div>
+    </form>
+</div>
+
+<div id="mondi-regulatory-app" style="display:none;">
 
     <!-- ── Top Bar ── -->
     <div class="top-bar">
@@ -782,6 +874,7 @@
     <div id="resultsList" class="results-grid"></div>
 </div>
 
+<!-- ===== AUTH SCRIPT ===== -->
 <script>
 const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRKOMSdPCzy_KM964rsOSlEwH0PoH-aOu2w26YTM9W3OggssFgFOy40Rrp2NN0q8WhxcA6Y5S1crzeI/pub?gid=0&single=true&output=csv";
 
@@ -789,6 +882,35 @@ let regulatoryData  = [];
 let currentFiltered = [];
 let currentSortField = 'date';
 let currentSortDir   = 'desc';
+let dataLoaded       = false;
+
+// ── Access gate: only load data after /api/login confirms the code ──
+document.getElementById('authForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const input    = document.getElementById('passwordInput');
+    const errorEl  = document.getElementById('authError');
+    errorEl.textContent = '';
+
+    try {
+        const response = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attempt: input.value })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('accessGate').style.display = 'none';
+            document.getElementById('mondi-regulatory-app').style.display = 'block';
+            loadData();            // PapaParse fires only now, after a correct code
+        } else {
+            errorEl.textContent = 'Incorrect access code.';
+            input.value = '';
+        }
+    } catch (err) {
+        errorEl.textContent = 'Something went wrong. Please try again.';
+    }
+});
 
 // ── Filter panel open by default = false (collapsed) ──
 let filterPanelOpen = false;
@@ -820,47 +942,53 @@ function updateActiveFilterCount() {
     badge.classList.toggle('visible', active > 0);
 }
 
-Papa.parse(GOOGLE_SHEET_CSV_URL, {
-    download: true,
-    header: true,
-    skipEmptyLines: true,
-    complete: function(results) {
-        regulatoryData = results.data.map(row => ({
-            priority:        row['Priority'],
-            mondiPriority:   row['Mondi priority'],
-            regulator:       row['Regulator'],
-            country:         row['Country'],
-            topic:           row['Regulatory topic'],
-            subtopic:        row['Subtopic'],
-            stage:           row['Stage'],
-            development:     row['Regulatory development'],
-            desc:            row['Brief description'],
-            mainChange:      row['Main Change'],
-            riskOpp:         row['Risk vs Opportunity'],
-            impact:          row['Impact'],
-            link:            row['Link'],
-            pubDate:         row['Publication date'],
-            compDate:        row['Compilation date'],
-            actionReq:       row['Action Required / Mandatory'],
-            territory:       row['Territorial scope'],
-            forwardAnalysis: row['Forward-Looking analysis'],
-            mondiComments:   row['Mondi Comments'],
-            otherObs:        row['Other Observations'],
-            team:            row['Team']
-        })).filter(item => item.topic);
+// ── Load the Google Sheet (called only after successful auth) ──
+function loadData() {
+    if (dataLoaded) return;   // guard: never parse twice
+    dataLoaded = true;
 
-        document.getElementById('loadingSpinner').style.display = 'none';
-        document.getElementById('resultsList').style.display = 'grid';
+    Papa.parse(GOOGLE_SHEET_CSV_URL, {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+            regulatoryData = results.data.map(row => ({
+                priority:        row['Priority'],
+                mondiPriority:   row['Mondi priority'],
+                regulator:       row['Regulator'],
+                country:         row['Country'],
+                topic:           row['Regulatory topic'],
+                subtopic:        row['Subtopic'],
+                stage:           row['Stage'],
+                development:     row['Regulatory development'],
+                desc:            row['Brief description'],
+                mainChange:      row['Main Change'],
+                riskOpp:         row['Risk vs Opportunity'],
+                impact:          row['Impact'],
+                link:            row['Link'],
+                pubDate:         row['Publication date'],
+                compDate:        row['Compilation date'],
+                actionReq:       row['Action Required / Mandatory'],
+                territory:       row['Territorial scope'],
+                forwardAnalysis: row['Forward-Looking analysis'],
+                mondiComments:   row['Mondi Comments'],
+                otherObs:        row['Other Observations'],
+                team:            row['Team']
+            })).filter(item => item.topic);
 
-        populateDropdowns();
-        populatePills();
-        filterData();
-    },
-    error: function() {
-        document.getElementById('loadingSpinner').innerHTML =
-            "⚠️ Error loading data. Please ensure the Google Sheet is published to the web.";
-    }
-});
+            document.getElementById('loadingSpinner').style.display = 'none';
+            document.getElementById('resultsList').style.display = 'grid';
+
+            populateDropdowns();
+            populatePills();
+            filterData();
+        },
+        error: function() {
+            document.getElementById('loadingSpinner').innerHTML =
+                "⚠️ Error loading data. Please ensure the Google Sheet is published to the web.";
+        }
+    });
+}
 
 /* ─── Parse a date string into a JS Date (best-effort) ─── */
 function parseDate(str) {
@@ -1245,6 +1373,6 @@ function downloadFile(content, filename, mimeType) {
     document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 </script>
-    
+
 </body>
 </html>
