@@ -2,7 +2,7 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).end();
 
     // The password is now hidden on the server, not in the HTML
-    const TRUE_CODE = 'MondisGreat!';
+    const TRUE_CODE = 'MondiCompliance!';
     const { attempt } = req.body;
 
     if (attempt === TRUE_CODE) {
